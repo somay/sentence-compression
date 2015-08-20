@@ -1,6 +1,6 @@
-import sys, pickle
+import sys, pickle, gc
 from collections import defaultdict
-
+from argparse import ArgumentParser, FileType
 
 def count2probability(d): # type of d is dict whose value's type is int
     sum_count = 0
@@ -10,23 +10,25 @@ def count2probability(d): # type of d is dict whose value's type is int
         d[key] = d[key] / sum_count
     return 
 
-def dump_count_and_probability(start_count, lm, dump_count=False):
-    if dump_count:
-        with open('start-mrphs-count.pickle', 'wb') as s, open('trigram-count.pickle', 'wb') as t:
-            pickle.dump(start_count, s)
-            pickle.dump(lm, t)
-
+def dump_count_and_probability(start_count, lm, start_count_file, lm_file):
     count2probability(start_count)
     for key in lm:
         count2probability(lm[key])
 
-    with open('start-mrphs-probability.pickle', 'wb') as s, open('trigram-model.pickle', 'wb') as t:
-        pickle.dump(start_count, s)
-        pickle.dump(lm, t)
+    pickle.dump(start_count, start_count_file)
+    pickle.dump(lm, lm_file)
     return
     
 
 if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument('--lm', '-l', type=FileType('wb'), required=True, help='a file to store trigram language model in pickle format')
+    parser.add_argument('--start', '-s', type=FileType('wb'), required=True, help='a file to store start-of-sentence probabilities in pickle format')
+
+    args = parser.parse_args()
+
+    print('You must use Ctrl-C when you are short of memory and want to stop computing', file=sys.stderr)
+    
     start_count = defaultdict(int)
     trigrams_once = set()
     trigrams_more_than_twice = set()
@@ -36,7 +38,7 @@ if __name__ == '__main__':
 
     try:
         for sentence in sys.stdin:
-            mrphs = sentence.split(' ')
+            mrphs = sentence.rstrip().split(' ')
             start_count[mrphs[0]] += 1
 
             for i in range(len(mrphs) - 2):
@@ -58,22 +60,24 @@ if __name__ == '__main__':
 
             num_sentences += 1
 
-            if len(trigrams_once) > 2**25:   # if more than 32M trigrams
-                trigrams_once = set()
-                print('trigram appeared once have been flushed')
 
             if num_sentences % 10000 == 0:
-                print(num_sentences, "sentences were processed, and", len(trigrams_more_than_twice), 'trigrams are in current language model')
+                print(num_sentences, "sentences were processed,", len(trigrams_more_than_twice), 'trigrams are in current language model, and', len(trigrams_once), 'trigrams were appeared only once')
+                if len(trigrams_once) > 2**23:   # if more than 8M trigrams
+                    print('trigrams which were appeared only once, were flushed')
+                    trigrams_once = set()
+                    gc.collect()
+
 
 
     except KeyboardInterrupt:
         del trigrams_once
         print(len(trigrams_more_than_twice), 'trigrams are in this language model')
         del trigrams_more_than_twice
-        dump_count_and_probability(start_count, lm)
+        dump_count_and_probability(start_count, lm, args.start, args.lm)
         sys.exit(0)
 
     del trigrams_once
     print(len(trigrams_more_than_twice), 'trigrams are in this language model')
     del trigrams_more_than_twice
-    dump_count_and_probability(start_count, lm)
+    dump_count_and_probability(start_count, lm, args.start, args.lm)
