@@ -58,7 +58,7 @@ def compress(sentence, start_prob, lm):
         for j in range(i+1, num_mrphs + 1):
             beta[i][j] = d()
             try:
-                beta_coeff[i][j] = lm[(sentence[i], sentence[j])]['<END>\n']
+                beta_coeff[i][j] = lm[(sentence[i], sentence[j])]['<END>']
             except KeyError:
                 beta_coeff[i][j] = 0
     for i in range(num_mrphs + 1 - 2):
